@@ -95,4 +95,4 @@ Clean Architecture + Dependency Injection on the backend:
 - `config/` — settings + the DI container wiring everything together
 - `api/` — FastAPI routers
 
-Full details, file tree, and open decisions: [architecture_plan.md](architectcural_plan.md).
+Full details, file tree, and open decisions: [architectural_plan.md](architectcural_plan.md).
