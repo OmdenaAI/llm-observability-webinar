@@ -1,0 +1,59 @@
+# LiteLLM gateway config.
+#
+# Caching and routing start DISABLED so Moment 1's "before" state is the
+# natural starting condition — the presenter enables both live on stage.
+#
+# primary-model uses a small, fast Ollama model (llama3.2:1b by default)
+# specifically chosen for demo reliability — docker-compose.yml's ollama
+# service auto-pulls this model on container start (cached afterward in
+# the ollama_data volume), so there's no manual "ollama pull" step and
+# no risk of the demo hitting an unpulled-model error mid-request.
+#
+# The fallback chain is deliberately built from a DIFFERENT provider than
+# the primary model. Primary is local Ollama, which "make kill-provider"
+# stops during Moment 4 — if the fallback were also Ollama, killing it
+# would take down both models and there would be nothing to fail over to.
+# OpenAI and Anthropic are used as fallbacks (in that order) so the
+# failover shown live is a real cross-provider handoff, not a local
+# process restarting. Both reuse the same OPENAI_API_KEY / ANTHROPIC_API_KEY
+# already configured for the eval judge (see .env.example).
+
+model_list:
+  - model_name: primary-model
+    litellm_params:
+      model: ollama/llama3.2:1b
+      api_base: http://ollama:11434
+
+  - model_name: fallback-model-openai
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: fallback-model-anthropic
+    litellm_params:
+      model: anthropic/claude-3-5-sonnet-latest
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+litellm_settings:
+  # Toggled live via the admin API / UI during Moment 1 — start false.
+  cache: false
+  cache_params:
+    type: local
+
+  # Fallback chain for Moment 4: local Ollama fails -> try OpenAI -> if
+  # that also fails, try Anthropic. Order reflects "prefer the cheaper/
+  # faster hosted option first, most resilient option last."
+  fallbacks:
+    - primary-model: ["fallback-model-openai", "fallback-model-anthropic"]
+
+  num_retries: 2
+  request_timeout: 15
+
+router_settings:
+  # Routing strategy toggled live during Moment 1 — only takes effect once
+  # routing_enabled is flipped true via the admin API.
+  routing_strategy: simple-shuffle
+  enable_pre_call_checks: true
+
+general_settings:
+  master_key: os.environ/LITELLM_ADMIN_API_KEY

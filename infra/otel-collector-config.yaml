@@ -1,0 +1,58 @@
+# Confirmed against Langfuse's current docs: OTLP ingestion at
+# {host}/api/public/otel, authenticated via HTTP Basic Auth using
+# base64(public_key:secret_key). The `basicauth` extension below builds
+# that encoded credential from two separate env vars — no hand-rolled
+# base64 string needed, and no risk of an unset combined-header var
+# (a previous version of this config referenced LANGFUSE_AUTH_HEADER,
+# which was never defined anywhere and pointed at a nonexistent
+# "langfuse" Docker hostname — that combination is what caused the
+# collector container to fail at startup entirely).
+#
+# `${env:VAR}` (not bare `${VAR}`) is the correct modern syntax for this
+# collector's env var expansion — using the older bare syntax may fail
+# config validation on current collector-contrib versions.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+
+extensions:
+  basicauth/langfuse:
+    client_auth:
+      username: ${env:LANGFUSE_PUBLIC_KEY}
+      password: ${env:LANGFUSE_SECRET_KEY}
+
+exporters:
+  otlphttp/langfuse:
+    endpoint: "${env:LANGFUSE_HOST}/api/public/otel"
+    auth:
+      authenticator: basicauth/langfuse
+
+  # Arize Phoenix also accepts OTLP — used if OBSERVABILITY_BACKEND=phoenix
+  otlphttp/phoenix:
+    endpoint: "${env:PHOENIX_HOST}/v1/traces"
+
+  logging:
+    verbosity: detailed
+
+service:
+  extensions: [basicauth/langfuse]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      # If LANGFUSE_PUBLIC_KEY/LANGFUSE_SECRET_KEY are blank or wrong,
+      # this now fails safely — the basicauth extension sends empty/bad
+      # credentials, Langfuse responds 401, and the collector logs a
+      # per-batch export error (visible via `docker compose logs
+      # otel-collector`) rather than the whole container failing to
+      # start. `logging` is kept alongside so traces are visible locally
+      # either way.
+      exporters: [otlphttp/langfuse, logging]
