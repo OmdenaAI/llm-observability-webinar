@@ -1,0 +1,145 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    env_file: .env
+    depends_on:
+      qdrant:
+        condition: service_started
+      litellm:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - ./data:/app/data
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Must match the backend's HOST-mapped port below (8000) — the
+        # browser running on the presenter's machine hits this directly,
+        # bypassing Docker's internal network entirely.
+        VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      # A genuinely small model, chosen for demo reliability/speed —
+      # override via OLLAMA_DEFAULT_MODEL in .env if you want a
+      # different one. Pulled automatically below on first start; the
+      # ollama_data volume caches it, so subsequent starts skip the pull.
+      OLLAMA_MODEL: ${OLLAMA_DEFAULT_MODEL:-llama3.2:1b}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama serve &
+        SERVE_PID=$$!
+        echo "Waiting for Ollama server to accept connections..."
+        until ollama list >/dev/null 2>&1; do sleep 1; done
+        if ollama list | grep -q "$$OLLAMA_MODEL"; then
+          echo "Model $$OLLAMA_MODEL already present — skipping pull."
+        else
+          echo "Pulling model: $$OLLAMA_MODEL (first run only; cached in the ollama_data volume afterward)"
+          ollama pull "$$OLLAMA_MODEL"
+        fi
+        wait $$SERVE_PID
+    healthcheck:
+      # Gates on the MODEL being present, not just the server responding —
+      # downstream services (LiteLLM) shouldn't be considered ready until
+      # there's actually something to route requests to.
+      test: ["CMD-SHELL", "ollama list | grep -q \"$$OLLAMA_MODEL\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./infra/litellm-config.yaml:/app/config.yaml
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    env_file: .env
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      # Confirmed via a live run: LiteLLM's proxy requires an API key on
+      # EVERY route, including /health, once general_settings.master_key
+      # is set (which it is, via LITELLM_ADMIN_API_KEY below) — an
+      # unauthenticated request gets a 401, which is what the earlier
+      # version of this healthcheck was silently hitting every interval.
+      # Sends that same key as a Bearer token, matching what
+      # infra/litellm-config.yaml's master_key is configured from.
+      test: ["CMD-SHELL", "python -c \"import os, urllib.request; req = urllib.request.Request('http://localhost:4000/health', headers={'Authorization': 'Bearer ' + os.environ['LITELLM_ADMIN_API_KEY']}); urllib.request.urlopen(req)\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  # otel-collector: no longer used as of the direct-export tracer change
+  # (src/infrastructure/tracing/otel_tracer.py) — the backend exports
+  # spans straight to Langfuse/Phoenix's own OTLP endpoints, bypassing
+  # a collector entirely. This container repeatedly failed to start
+  # reliably across several live runs (persistent DNS resolution errors
+  # from the backend's side despite multiple config fixes), and its
+  # main benefit — routing one stream to many backends via config alone
+  # — isn't worth that reliability cost for a two-destination demo.
+  # infra/otel-collector-config.yaml is left in place as a documented
+  # alternative if you want to reinstate a collector-based path later.
+  # otel-collector:
+  #   image: otel/opentelemetry-collector-contrib:latest
+  #   ports:
+  #     - "4317:4317"
+  #     - "4318:4318"
+  #   volumes:
+  #     - ./infra/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml
+  #   command: ["--config=/etc/otelcol-contrib/config.yaml"]
+  #   env_file: .env
+
+  # Langfuse requires its own Postgres — kept minimal here; consider using
+  # Langfuse Cloud for the demo instead of self-hosting, to reduce moving
+  # parts on presentation day. Uncomment if self-hosting.
+  # langfuse:
+  #   image: langfuse/langfuse:latest
+  #   ports:
+  #     - "3000:3000"
+  #   env_file: .env
+  #   depends_on:
+  #     - langfuse-db
+  #
+  # langfuse-db:
+  #   image: postgres:16
+  #   environment:
+  #     POSTGRES_USER: langfuse
+  #     POSTGRES_PASSWORD: langfuse
+  #     POSTGRES_DB: langfuse
+  #   volumes:
+  #     - langfuse_db_data:/var/lib/postgresql/data
+
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    ports:
+      - "6006:6006"
+
+volumes:
+  qdrant_data:
+  ollama_data:
+  # langfuse_db_data:
