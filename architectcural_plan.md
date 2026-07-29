@@ -1,4 +1,4 @@
-# Architecture Plan v2 — Clean Architecture + DI
+# Architecture Plan — Clean Architecture + DI
 
 
 ## Stack
