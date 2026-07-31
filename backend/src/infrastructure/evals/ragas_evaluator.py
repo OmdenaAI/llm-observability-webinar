@@ -40,7 +40,13 @@ things on a 0.0-1.0 scale:
 A 1.0 means every claim in the answer is directly supported by the \
 context. A 0.0 means the answer is entirely unsupported or contradicts \
 the context. If the answer states something the context does not \
-contain, that portion is unfaithful even if it sounds plausible.
+contain, that portion is unfaithful even if it sounds plausible. \
+Retrieved chunks may carry a "[source status: superseded]" tag — if a \
+chunk feeding the answer is tagged superseded, treat an answer grounded \
+primarily in that chunk as NOT fully faithful, even if it accurately \
+reflects that chunk's text: being faithful to a superseded source is not \
+the same as being faithful to the current, correct answer, and should \
+pull the score down accordingly rather than scoring 1.0.
 
 - "relevancy": how directly the answer addresses the question asked, \
 regardless of whether it is grounded in the context. A 1.0 means the \
@@ -68,7 +74,7 @@ def _build_judge_user_prompt(
         The formatted prompt string.
     """
     context_block = (
-        "\n\n".join(chunk.content for chunk in context)
+        "\n\n".join(_format_chunk_for_judge(chunk) for chunk in context)
         if context
         else "(no context was retrieved)"
     )
@@ -77,6 +83,33 @@ def _build_judge_user_prompt(
         f"Retrieved context:\n{context_block}\n\n"
         f"Generated answer:\n{answer}"
     )
+
+
+def _format_chunk_for_judge(
+    chunk: RetrievedChunk,
+) -> str:
+    """Format one retrieved chunk for the judge prompt, surfacing its
+    currency status (if known) alongside its content.
+
+    Only `status` is surfaced here — it's the one signal the judge
+    prompt is instructed to act on (see JUDGE_SYSTEM_PROMPT). Other
+    metadata (e.g. misattribution_risk) is an ingestion-time signal for
+    a different purpose and isn't relevant to scoring a specific answer.
+
+    Args:
+        chunk: The retrieved chunk to format.
+
+    Returns:
+        The chunk's content, prefixed with a status tag if the chunk's
+        metadata marks it as anything other than "current" (an
+        "uncertain" or missing status is left untagged — the judge
+        should only be steered when there's an actual signal, not
+        prompted to doubt every chunk by default).
+    """
+    status = chunk.metadata.get("status")
+    if status and status != "current":
+        return f"[source status: {status}] {chunk.content}"
+    return chunk.content
 
 
 def _parse_judge_response(
