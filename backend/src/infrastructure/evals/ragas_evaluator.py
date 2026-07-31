@@ -40,13 +40,22 @@ things on a 0.0-1.0 scale:
 A 1.0 means every claim in the answer is directly supported by the \
 context. A 0.0 means the answer is entirely unsupported or contradicts \
 the context. If the answer states something the context does not \
-contain, that portion is unfaithful even if it sounds plausible. \
-Retrieved chunks may carry a "[source status: superseded]" tag — if a \
-chunk feeding the answer is tagged superseded, treat an answer grounded \
-primarily in that chunk as NOT fully faithful, even if it accurately \
-reflects that chunk's text: being faithful to a superseded source is not \
-the same as being faithful to the current, correct answer, and should \
-pull the score down accordingly rather than scoring 1.0.
+contain, that portion is unfaithful even if it sounds plausible.
+
+Each retrieved chunk below is labeled with its source filename, and some \
+carry a "status: superseded" tag. When judging faithfulness, treat \
+superseded chunks carefully rather than penalizing their mere presence: \
+- If the answer's claim is ALSO supported by a current or untagged \
+chunk, the superseded chunk's presence elsewhere in context does NOT \
+reduce faithfulness — the answer is still grounded in a valid source.
+- Only reduce faithfulness when the answer's specific claim is supported \
+ONLY by a chunk tagged superseded, with no current or untagged chunk \
+corroborating it. In that case, being faithful to a superseded source is \
+not the same as being faithful to the current, correct answer, and the \
+score should reflect that — do not score 1.0.
+- If you cannot tell which specific chunk a claim came from, do not \
+guess against the answer — score faithfulness based on the claim's \
+support across the context as a whole.
 
 - "relevancy": how directly the answer addresses the question asked, \
 regardless of whether it is grounded in the context. A 1.0 means the \
@@ -55,7 +64,8 @@ the question at all.
 
 Respond with ONLY a JSON object of the exact form:
 {"faithfulness": <float>, "relevancy": <float>, "reasoning": "<one \
-sentence explaining the faithfulness score specifically>"}"""
+sentence explaining the faithfulness score specifically, naming which \
+source(s) it relied on>"}"""
 
 
 def _build_judge_user_prompt(
@@ -88,28 +98,33 @@ def _build_judge_user_prompt(
 def _format_chunk_for_judge(
     chunk: RetrievedChunk,
 ) -> str:
-    """Format one retrieved chunk for the judge prompt, surfacing its
-    currency status (if known) alongside its content.
+    """Format one retrieved chunk for the judge prompt, always labeling
+    its source and surfacing its currency status when known.
 
-    Only `status` is surfaced here — it's the one signal the judge
-    prompt is instructed to act on (see JUDGE_SYSTEM_PROMPT). Other
-    metadata (e.g. misattribution_risk) is an ingestion-time signal for
-    a different purpose and isn't relevant to scoring a specific answer.
+    The source label is what lets the judge distinguish "this chunk"
+    from "that chunk" when cross-referencing claims across multiple
+    retrieved chunks (see JUDGE_SYSTEM_PROMPT) — without it, a corpus
+    where plain and contextual retrieval both return the same two
+    documents together (common in a small corpus, since `top_k` can't
+    be raised without collapsing the two modes into returning nearly
+    the whole corpus either way) would look like undifferentiated text
+    to the judge, making per-chunk attribution impossible.
 
     Args:
         chunk: The retrieved chunk to format.
 
     Returns:
-        The chunk's content, prefixed with a status tag if the chunk's
-        metadata marks it as anything other than "current" (an
-        "uncertain" or missing status is left untagged — the judge
-        should only be steered when there's an actual signal, not
-        prompted to doubt every chunk by default).
+        The chunk's content, prefixed with a "[source: <filename>]" tag,
+        plus a ", status: <status>" suffix on that same tag when the
+        chunk's metadata marks it as anything other than "current" (an
+        "uncertain" or missing status adds no suffix — the judge should
+        only be steered when there's an actual signal, not prompted to
+        doubt every chunk by default).
     """
     status = chunk.metadata.get("status")
     if status and status != "current":
-        return f"[source status: {status}] {chunk.content}"
-    return chunk.content
+        return f"[source: {chunk.source}, status: {status}] {chunk.content}"
+    return f"[source: {chunk.source}] {chunk.content}"
 
 
 def _parse_judge_response(
