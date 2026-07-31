@@ -17,6 +17,7 @@ instead of crashing the demo mid-question.
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http import models as qdrant_models
 from openai import AsyncOpenAI
+import uuid
 
 from src.domain.entities.query import Query, RetrievalResult, RetrievedChunk
 from src.infrastructure.vector_store.base import BaseVectorStore
@@ -223,18 +224,33 @@ class QdrantVectorStore(BaseVectorStore):
         await self._ensure_collection(collection_name)
 
         points = []
-        for index, document in enumerate(documents):
-            # NOTE: point IDs are sequential indices, not content hashes.
-            # This is fine for our use case since data/ingest.py always
-            # upserts the full corpus in one pass per collection
-            # (re-running it overwrites the same IDs cleanly), but would
-            # need a stable ID scheme (e.g. a hash of `source`) if
-            # documents were ever ingested incrementally or out of a
-            # fixed order.
+        for document in documents:
+            # Point IDs are now a deterministic UUID5 derived from
+            # (source, chunk_index) rather than the plain enumerate()
+            # index used previously. That old scheme assumed one point
+            # per source document — it silently broke the moment
+            # chunking made a single source produce multiple points,
+            # since several chunks from the same document would all
+            # collide on the same set of sequential IDs as chunks from
+            # other documents. uuid5 is used (not Python's built-in
+            # hash()) because hash() is randomized per-process by
+            # default (PYTHONHASHSEED) and is NOT guaranteed to produce
+            # the same value across separate `make seed` runs — uuid5
+            # is a pure deterministic function of its inputs, so the
+            # same (source, chunk_index) always maps to the same point,
+            # letting re-ingestion overwrite cleanly rather than
+            # accumulate duplicates.
+            chunk_index = document.get("metadata", {}).get("chunk_index", 0)
+            point_id = str(
+                uuid.uuid5(
+                    uuid.NAMESPACE_DNS,
+                    f"{collection_name}::{document.get('source', 'unknown')}::{chunk_index}",
+                )
+            )
             vector = await self._embed(document["content"])
             points.append(
                 qdrant_models.PointStruct(
-                    id=index,
+                    id=point_id,
                     vector=vector,
                     payload={
                         "content": document["content"],

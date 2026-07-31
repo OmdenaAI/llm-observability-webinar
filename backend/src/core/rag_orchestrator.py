@@ -181,6 +181,7 @@ class RAGOrchestrator:
         question: str,
         use_contextual_retrieval: bool = False,
         model: str | None = None,
+        top_k: int = 2,
     ) -> RAGResponse:
         """Answer a single question end to end.
 
@@ -202,6 +203,15 @@ class RAGOrchestrator:
                 request would follow whatever cache/routing state was
                 left over from testing other moments, which could mean
                 it never actually hits the dead provider at all.
+            top_k: How many retrieved chunks to hand to the generator.
+                Defaults to 2 (unchanged behavior for every existing
+                caller that doesn't pass this explicitly). Used by
+                QualityTrapScenario (Moment 2) with top_k=1, so a
+                chunked trap document's disambiguating chunk is excluded
+                from context rather than retrieved alongside the
+                narrower one — without this override, chunking alone
+                doesn't isolate anything, since both chunks would still
+                reach the generator together at the default of 2.
 
         Returns:
             The full response, including retrieval, generation, any
@@ -218,6 +228,7 @@ class RAGOrchestrator:
             retrieval = await self._retrieve(
                 question,
                 use_contextual_retrieval,
+                top_k,
             )
 
             generation = await self._generate(
@@ -297,6 +308,7 @@ class RAGOrchestrator:
         self,
         question: str,
         use_contextual_retrieval: bool,
+        top_k: int = 2,
     ) -> RetrievalResult:
         """Retrieve context chunks for the given question.
 
@@ -304,6 +316,8 @@ class RAGOrchestrator:
             question: The user's natural-language question.
             use_contextual_retrieval: Whether to use the contextual
                 retrieval strategy.
+            top_k: How many chunks to retrieve — see handle_question's
+                docstring for why this is sometimes overridden.
 
         Returns:
             The retrieved chunks, wrapped with query and mode metadata.
@@ -315,9 +329,9 @@ class RAGOrchestrator:
         async with self._tracer.start_span(
             name="retrieve",
             kind=SpanKind.RETRIEVAL,
-            attributes={"contextual": use_contextual_retrieval},
+            attributes={"contextual": use_contextual_retrieval, "top_k": top_k},
         ):
-            return await self._vector_store.retrieve(query)
+            return await self._vector_store.retrieve(query, top_k)
 
     async def _generate(
         self,

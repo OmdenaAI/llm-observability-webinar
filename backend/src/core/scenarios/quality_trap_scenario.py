@@ -66,7 +66,16 @@ class QualityTrapScenario:
         # test run.
         await self._gateway.set_cache_enabled(False)
 
-        response = await self._orchestrator.handle_question(trap_question)
+        # top_k=1 rather than the orchestrator's default of 2 — with the
+        # trap document now chunked (see data/ingest.py), the default
+        # would retrieve the disambiguating chunk alongside the
+        # narrower one, undoing the isolation chunking exists to create
+        # for this scenario. See RAGOrchestrator.handle_question's
+        # docstring for the full reasoning.
+        response = await self._orchestrator.handle_question(
+            trap_question,
+            top_k=1,
+        )
 
         eval_score = await self._evaluator.score(
             question=trap_question,
