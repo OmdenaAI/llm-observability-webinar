@@ -98,6 +98,11 @@ async def run_quality_trap_scenario(
             relevancy=result.eval_score.relevancy,
             faithfulness=result.eval_score.faithfulness,
             is_quality_trap=result.eval_score.is_quality_trap,
+            retrieved_sources=[
+                chunk.source for chunk in result.response.retrieval.chunks
+            ]
+            if result.response.retrieval
+            else [],
         )
     except Exception as exc:  # noqa: BLE001
         logger.error(f"Quality trap scenario failed: {exc}")
@@ -134,6 +139,14 @@ async def run_context_comparison(
             plain_faithfulness=result.plain_score.faithfulness,
             contextual_faithfulness=result.contextual_score.faithfulness,
             faithfulness_delta=result.faithfulness_delta,
+            plain_sources=[chunk.source for chunk in result.plain.retrieval.chunks]
+            if result.plain.retrieval
+            else [],
+            contextual_sources=[
+                chunk.source for chunk in result.contextual.retrieval.chunks
+            ]
+            if result.contextual.retrieval
+            else [],
         )
     except Exception as exc:  # noqa: BLE001
         logger.error(f"Context comparison scenario failed: {exc}")
@@ -181,6 +194,11 @@ async def run_context_single_turn(
             if result.response.retrieval
             else "unknown",
             trace_url=result.response.trace_url,
+            retrieved_sources=[
+                chunk.source for chunk in result.response.retrieval.chunks
+            ]
+            if result.response.retrieval
+            else [],
         )
     except Exception as exc:  # noqa: BLE001
         logger.error(f"Context single-turn scenario failed: {exc}")
@@ -219,6 +237,11 @@ async def run_stale_context_case(
             answer=result.response.answer,
             faithfulness=result.eval_score.faithfulness,
             passes_eval_but_wrong=result.passes_eval_but_wrong,
+            retrieved_sources=[
+                chunk.source for chunk in result.response.retrieval.chunks
+            ]
+            if result.response.retrieval
+            else [],
         )
     except Exception as exc:  # noqa: BLE001
         logger.error(f"Stale context scenario failed: {exc}")

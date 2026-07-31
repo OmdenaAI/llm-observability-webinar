@@ -330,8 +330,27 @@ class RAGOrchestrator:
             name="retrieve",
             kind=SpanKind.RETRIEVAL,
             attributes={"contextual": use_contextual_retrieval, "top_k": top_k},
-        ):
-            return await self._vector_store.retrieve(query, top_k)
+        ) as span:
+            result = await self._vector_store.retrieve(query, top_k)
+
+            # Attached AFTER the call, same pattern as _generate's
+            # post-call attributes below — which chunk(s) actually came
+            # back is only known once retrieval completes. Without this,
+            # a trace shows that retrieval happened and which mode was
+            # requested, but not which document(s) it actually returned
+            # — which is exactly the fact needed to tell "plain
+            # retrieval picked the wrong document" apart from "plain
+            # retrieval picked the same document contextual did," rather
+            # than inferring it indirectly from the faithfulness score.
+            span.set_attribute(
+                "retrieval.sources",
+                [chunk.source for chunk in result.chunks],
+            )
+            span.set_attribute(
+                "retrieval.scores",
+                [chunk.score for chunk in result.chunks],
+            )
+            return result
 
     async def _generate(
         self,

@@ -20,6 +20,7 @@ class QualityTrapResponse(BaseModel):
     relevancy: float
     faithfulness: float
     is_quality_trap: bool
+    retrieved_sources: list[str] = []
 
 
 class ContextComparisonResponse(BaseModel):
@@ -28,6 +29,8 @@ class ContextComparisonResponse(BaseModel):
     plain_faithfulness: float
     contextual_faithfulness: float
     faithfulness_delta: float
+    plain_sources: list[str] = []
+    contextual_sources: list[str] = []
 
 
 class ContextSingleTurnResponse(BaseModel):
@@ -44,6 +47,7 @@ class ContextSingleTurnResponse(BaseModel):
     faithfulness: float
     retrieval_mode: str
     trace_url: str | None = None
+    retrieved_sources: list[str] = []
 
 
 class StaleContextResponse(BaseModel):
@@ -52,6 +56,7 @@ class StaleContextResponse(BaseModel):
     answer: str
     faithfulness: float
     passes_eval_but_wrong: bool
+    retrieved_sources: list[str] = []
 
 
 class ReliabilityScenarioRequest(BaseModel):
