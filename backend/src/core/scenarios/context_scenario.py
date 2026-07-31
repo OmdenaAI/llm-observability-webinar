@@ -124,9 +124,19 @@ class ContextScenario:
         """
         await self._gateway.set_cache_enabled(False)
 
+        # top_k=1 rather than the orchestrator's default of 2 — this
+        # corpus's current/stale pair are near-duplicate content on the
+        # same topic, so top_k=2 was retrieving BOTH documents together
+        # regardless of retrieval mode, letting the generator read both
+        # dates itself and disambiguate on its own — which meant plain
+        # and contextual retrieval never actually differed in what the
+        # generator saw. top_k=1 forces each mode to commit to a single
+        # top-ranked document, so a genuine difference in which document
+        # each mode's embedding ranks first can actually surface.
         response = await self._orchestrator.handle_question(
             question,
             use_contextual_retrieval=use_contextual_retrieval,
+            top_k=1,
         )
         eval_score = await self._evaluator.score(
             question=question,
@@ -155,6 +165,7 @@ class ContextScenario:
         plain = await self._orchestrator.handle_question(
             question,
             use_contextual_retrieval=False,
+            top_k=1,
         )
         plain_score = await self._evaluator.score(
             question=question,
@@ -165,6 +176,7 @@ class ContextScenario:
         contextual = await self._orchestrator.handle_question(
             question,
             use_contextual_retrieval=True,
+            top_k=1,
         )
         contextual_score = await self._evaluator.score(
             question=question,
@@ -194,9 +206,20 @@ class ContextScenario:
         """
         await self._gateway.set_cache_enabled(False)
 
+        # Changed from use_contextual_retrieval=True to False, and added
+        # top_k=1. The previous version asked with contextual retrieval
+        # ON, which — if contextual retrieval is doing its job — should
+        # rank the CURRENT document first, not the stale one; that call
+        # was never actually testing the failure this scenario is named
+        # for. Testing the real failure mode means forcing PLAIN
+        # retrieval (no currency signal to lean on) to commit to a
+        # single top-ranked document (top_k=1) and checking whether it
+        # picks the stale one — that's the actual "plain retrieval
+        # can't tell which is current" case Moment 3 exists to show.
         response = await self._orchestrator.handle_question(
             stale_question,
-            use_contextual_retrieval=True,
+            use_contextual_retrieval=False,
+            top_k=1,
         )
         eval_score = await self._evaluator.score(
             question=stale_question,
