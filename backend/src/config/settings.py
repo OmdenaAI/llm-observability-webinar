@@ -59,6 +59,16 @@ class Settings(BaseSettings):
     # brain" — one for grading answers, one for answering them.
     litellm_fallback_model_openai: str = "gpt-4o-mini"
     litellm_fallback_model_anthropic: str = "claude-3-5-sonnet-latest"
+    # Sampling controls for every generation call made through the gateway
+    # (chat + all five scenarios, since they all share the same
+    # LiteLLMGatewayProvider singleton). Default to fully deterministic —
+    # 0.0 temperature plus a fixed seed — so Moments 2 and 3 (whose eval
+    # scores depend on which way the small local model happens to phrase
+    # its answer) reproduce the same result on every run instead of
+    # flip-flopping between demo-safe and trap-triggering. Override via
+    # .env if a specific dry run needs to sample instead.
+    generation_temperature: float = 0.0
+    generation_seed: int | None = 42
 
     # --- MCP / Umaku ----------------------------------------------------------
     umaku_mcp_url: str = "https://mcp.umaku.ai/mcp"

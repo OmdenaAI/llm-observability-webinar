@@ -66,6 +66,8 @@ class LiteLLMGatewayProvider(BaseLLMProvider):
         default_model: str = "primary-model",
         gateway: LiteLLMGateway | None = None,
         admin_api_key: str = "",
+        temperature: float = 0.0,
+        seed: int | None = None,
     ) -> None:
         """Initialize the provider's HTTP client and shared gateway reference.
 
@@ -84,10 +86,22 @@ class LiteLLMGatewayProvider(BaseLLMProvider):
                 /health, with a 401 once general_settings.master_key is
                 set (which infra/litellm-config.yaml does), so every
                 request from this client must carry it as a Bearer token.
+            temperature: Sampling temperature sent on every generation
+                call. Defaults to 0.0 (deterministic) — see
+                settings.generation_temperature for why: without this,
+                the small local primary model produces a genuinely
+                different answer on each call, which flips Moments 2/3's
+                eval scores (faithfulness) run to run even though the
+                judge itself is already deterministic.
+            seed: Optional fixed sampling seed sent on every generation
+                call, for full run-to-run reproducibility alongside
+                temperature=0. None omits the parameter entirely.
         """
         self._gateway_url = gateway_url
         self._default_model = default_model
         self._gateway = gateway
+        self._temperature = temperature
+        self._seed = seed
         self._http_client = httpx.AsyncClient(
             base_url=gateway_url,
             timeout=30.0,
@@ -148,13 +162,22 @@ class LiteLLMGatewayProvider(BaseLLMProvider):
                     metadata=cached.metadata,
                 )
 
+        request_body = {
+            "model": target_model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": self._temperature,
+        }
+        if self._seed is not None:
+            # Omitted entirely rather than sent as null — some providers
+            # in the fallback chain (OpenAI/Anthropic via LiteLLM) may
+            # not honor seed identically to Ollama; leaving it unset
+            # when None avoids sending a meaningless seed=None downstream.
+            request_body["seed"] = self._seed
+
         start = time.perf_counter()
         response = await self._http_client.post(
             "/chat/completions",
-            json={
-                "model": target_model,
-                "messages": [{"role": "user", "content": prompt}],
-            },
+            json=request_body,
         )
         response.raise_for_status()
         data = response.json()
