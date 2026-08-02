@@ -211,9 +211,20 @@ class RagasEvaluator(BaseEvaluator):
         raw_response = await self._call_judge(user_prompt)
         faithfulness, relevancy = _parse_judge_response(raw_response)
 
-        logger.debug(
+        # TEMPORARY diagnostic logging — remove once Moment 2/3 scoring
+        # behavior is confirmed stable. INFO level so it's visible
+        # without changing the backend's configured log level.
+        try:
+            reasoning = json.loads(
+                raw_response.strip().strip("`").removeprefix("json").strip()
+            ).get("reasoning", "<no reasoning field>")
+        except (json.JSONDecodeError, AttributeError):
+            reasoning = "<could not parse reasoning from judge response>"
+        logger.info(
             f"Judge scores — faithfulness={faithfulness:.3f}, "
-            f"relevancy={relevancy:.3f}"
+            f"relevancy={relevancy:.3f} | reasoning: {reasoning} | "
+            f"context sources: {[c.source for c in context]} | "
+            f"answer: {answer[:200]!r}"
         )
 
         return EvalScore(

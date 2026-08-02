@@ -17,6 +17,9 @@ from src.domain.interfaces.llm_provider import LLMProviderInterface
 from src.domain.interfaces.mcp_client import MCPClientInterface
 from src.domain.interfaces.tracer import TracerInterface
 from src.domain.interfaces.vector_store import VectorStoreInterface
+from utils.logger import get_logger
+
+logger = get_logger()
 
 # Umaku's exact field name for a sprint's ID within a sprint object,
 # and its type, are now confirmed via a live call: the first result's
@@ -334,7 +337,20 @@ class RAGOrchestrator:
             kind=SpanKind.RETRIEVAL,
             attributes={"contextual": use_contextual_retrieval},
         ):
-            return await self._vector_store.retrieve(query, top_k)
+            result = await self._vector_store.retrieve(query, top_k)
+            # TEMPORARY diagnostic logging — remove once Moment 2/3
+            # retrieval behavior is confirmed stable. logger.debug was
+            # already here for judge scores but isn't visible at the
+            # backend's current INFO log level; this uses INFO so it
+            # shows up without changing config.
+            logger.info(
+                f"Retrieved {len(result.chunks)} chunk(s) for "
+                f"top_k={top_k}, mode={result.retrieval_mode!r}: "
+                + ", ".join(
+                    f"[{c.source} score={c.score:.4f}]" for c in result.chunks
+                )
+            )
+            return result
 
     async def _generate(
         self,
