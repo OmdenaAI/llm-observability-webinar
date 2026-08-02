@@ -1,14 +1,21 @@
 # Data Retention Policy
 
-User data is retained in accordance with applicable data protection
-regulations. Deleted account data is removed from active production
-systems immediately upon processing a deletion request; no retention
-period applies to account data once a deletion request has been
-processed. Backup systems, which are separate from production systems,
-retain a rolling snapshot of all account data (including deleted
-accounts) for 90 days as part of standard disaster-recovery procedure,
-after which backups are purged on a routine schedule. This 90-day
-backup window is a disaster-recovery control, not a data retention
-period for deleted accounts, and should not be quoted as one. For
-questions about specific handling exceptions, contact the privacy team
+Last updated: January 2026
+
+This policy describes how we handle personal account data, in
+accordance with applicable data protection regulations.
+
+When you request deletion of your account, your personal data is
+removed from all active production systems as part of processing that
+request. There is no waiting period or countdown attached to this
+removal — once a deletion request has been processed, the data is
+gone from production. We do not retain deleted account data for any
+fixed duration for the purpose of restoring or reactivating an account
+after deletion.
+
+Separately, our infrastructure team maintains disaster-recovery
+backups as part of normal operational practice; those backups are
+governed by a separate operational policy and are not part of this
+data retention policy. If you have questions about how deletion
+interacts with backups specifically, contact the privacy team
 directly.

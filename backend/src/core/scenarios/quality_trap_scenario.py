@@ -66,7 +66,15 @@ class QualityTrapScenario:
         # test run.
         await self._gateway.set_cache_enabled(False)
 
-        response = await self._orchestrator.handle_question(trap_question)
+        # top_k=1: with the split retention/backup documents, this
+        # forces retrieval to pick a single winner rather than handing
+        # the model both the correct doc and the misleading one
+        # together — see RAGOrchestrator.handle_question's top_k
+        # docstring for the full reasoning.
+        response = await self._orchestrator.handle_question(
+            trap_question,
+            top_k=1,
+        )
 
         eval_score = await self._evaluator.score(
             question=trap_question,

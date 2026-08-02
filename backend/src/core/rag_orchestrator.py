@@ -181,6 +181,7 @@ class RAGOrchestrator:
         question: str,
         use_contextual_retrieval: bool = False,
         model: str | None = None,
+        top_k: int = 2,
     ) -> RAGResponse:
         """Answer a single question end to end.
 
@@ -202,6 +203,17 @@ class RAGOrchestrator:
                 request would follow whatever cache/routing state was
                 left over from testing other moments, which could mean
                 it never actually hits the dead provider at all.
+            top_k: How many chunks to retrieve. Defaults to 2. Moments 2
+                and 3 (QualityTrapScenario, ContextScenario) override
+                this to 1 — with a small corpus containing near-duplicate
+                documents (the current/stale pricing pair, and the
+                split retention/backup pair), top_k=2 tends to retrieve
+                both members of a pair together regardless of retrieval
+                mode, which quietly defeats both the trap and the
+                plain-vs-contextual comparison those moments exist to
+                demonstrate. Forcing top_k=1 makes retrieval pick a
+                single winner, which is what actually lets retrieval
+                mode determine the outcome.
 
         Returns:
             The full response, including retrieval, generation, any
@@ -218,6 +230,7 @@ class RAGOrchestrator:
             retrieval = await self._retrieve(
                 question,
                 use_contextual_retrieval,
+                top_k,
             )
 
             generation = await self._generate(
@@ -297,6 +310,7 @@ class RAGOrchestrator:
         self,
         question: str,
         use_contextual_retrieval: bool,
+        top_k: int = 2,
     ) -> RetrievalResult:
         """Retrieve context chunks for the given question.
 
@@ -304,6 +318,9 @@ class RAGOrchestrator:
             question: The user's natural-language question.
             use_contextual_retrieval: Whether to use the contextual
                 retrieval strategy.
+            top_k: How many chunks to retrieve. See handle_question's
+                top_k docstring for why this is overridden for Moments
+                2 and 3.
 
         Returns:
             The retrieved chunks, wrapped with query and mode metadata.
@@ -317,7 +334,7 @@ class RAGOrchestrator:
             kind=SpanKind.RETRIEVAL,
             attributes={"contextual": use_contextual_retrieval},
         ):
-            return await self._vector_store.retrieve(query)
+            return await self._vector_store.retrieve(query, top_k)
 
     async def _generate(
         self,

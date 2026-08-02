@@ -124,9 +124,15 @@ class ContextScenario:
         """
         await self._gateway.set_cache_enabled(False)
 
+        # top_k=1: forces a single winner between the current/stale
+        # pricing-doc pair, so retrieval mode (plain vs. contextual)
+        # actually determines which one wins, instead of both riding
+        # along together at top_k=2. See RAGOrchestrator.handle_question's
+        # top_k docstring for the full reasoning.
         response = await self._orchestrator.handle_question(
             question,
             use_contextual_retrieval=use_contextual_retrieval,
+            top_k=1,
         )
         eval_score = await self._evaluator.score(
             question=question,
@@ -155,6 +161,7 @@ class ContextScenario:
         plain = await self._orchestrator.handle_question(
             question,
             use_contextual_retrieval=False,
+            top_k=1,
         )
         plain_score = await self._evaluator.score(
             question=question,
@@ -165,6 +172,7 @@ class ContextScenario:
         contextual = await self._orchestrator.handle_question(
             question,
             use_contextual_retrieval=True,
+            top_k=1,
         )
         contextual_score = await self._evaluator.score(
             question=question,
@@ -197,6 +205,7 @@ class ContextScenario:
         response = await self._orchestrator.handle_question(
             stale_question,
             use_contextual_retrieval=True,
+            top_k=1,
         )
         eval_score = await self._evaluator.score(
             question=stale_question,
