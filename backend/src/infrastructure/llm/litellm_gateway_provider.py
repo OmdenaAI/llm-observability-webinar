@@ -40,6 +40,20 @@ _ROUTING_DISABLED_MODEL = "fallback-model-openai"
 # The model requested when routing is ON — local, $0 cost.
 _ROUTING_ENABLED_MODEL = "primary-model"
 
+# LiteLLM model_names (from infra/litellm-config.yaml) that route to a
+# provider whose API doesn't accept a `seed` param at all — Anthropic
+# has no seed/determinism parameter in its Messages API. This only
+# covers a call that explicitly requests one of these model_names by
+# name. It does NOT cover Moment 4's live failover: that path always
+# requests "primary-model" and LiteLLM decides server-side, via the
+# `fallbacks` chain, whether OpenAI or Anthropic ends up serving the
+# request — the client can't know in advance which provider that'll
+# be. infra/litellm-config.yaml's `drop_params: true` is what actually
+# protects that path, by stripping `seed` at whichever hop doesn't
+# support it. This set is kept as belt-and-suspenders for any explicit,
+# direct call to fallback-model-anthropic.
+_SEED_UNSUPPORTED_MODELS = frozenset({"fallback-model-anthropic"})
+
 
 def _cache_key(
     prompt: str,
@@ -66,6 +80,8 @@ class LiteLLMGatewayProvider(BaseLLMProvider):
         default_model: str = "primary-model",
         gateway: LiteLLMGateway | None = None,
         admin_api_key: str = "",
+        temperature: float = 0.0,
+        seed: int | None = 42,
     ) -> None:
         """Initialize the provider's HTTP client and shared gateway reference.
 
@@ -84,10 +100,20 @@ class LiteLLMGatewayProvider(BaseLLMProvider):
                 /health, with a 401 once general_settings.master_key is
                 set (which infra/litellm-config.yaml does), so every
                 request from this client must carry it as a Bearer token.
+            temperature: Sampling temperature sent on every call — kept
+                low/zero by default for demo run-to-run reproducibility
+                (see Settings.generation_temperature), not a production
+                recommendation.
+            seed: Sampling seed sent alongside temperature, for the same
+                reproducibility reason, except for models in
+                `_SEED_UNSUPPORTED_MODELS`. Pass None to omit it
+                entirely for every model.
         """
         self._gateway_url = gateway_url
         self._default_model = default_model
         self._gateway = gateway
+        self._temperature = temperature
+        self._seed = seed
         self._http_client = httpx.AsyncClient(
             base_url=gateway_url,
             timeout=30.0,
@@ -148,13 +174,18 @@ class LiteLLMGatewayProvider(BaseLLMProvider):
                     metadata=cached.metadata,
                 )
 
+        request_body: dict = {
+            "model": target_model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": self._temperature,
+        }
+        if self._seed is not None and target_model not in _SEED_UNSUPPORTED_MODELS:
+            request_body["seed"] = self._seed
+
         start = time.perf_counter()
         response = await self._http_client.post(
             "/chat/completions",
-            json={
-                "model": target_model,
-                "messages": [{"role": "user", "content": prompt}],
-            },
+            json=request_body,
         )
         response.raise_for_status()
         data = response.json()

@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     # brain" — one for grading answers, one for answering them.
     litellm_fallback_model_openai: str = "gpt-4o-mini"
     litellm_fallback_model_anthropic: str = "claude-3-5-sonnet-latest"
+    # Demo-reproducibility settings, NOT a production recommendation —
+    # pins generation output so Moments 2/3's faithfulness scores stay
+    # stable run-to-run on stage, rather than swinging with normal
+    # sampling variance. seed is dropped for providers that don't
+    # support it, via infra/litellm-config.yaml's drop_params setting.
+    generation_temperature: float = 0.0
+    generation_seed: int = 42
 
     # --- MCP / Umaku ----------------------------------------------------------
     umaku_mcp_url: str = "https://mcp.umaku.ai/mcp"
