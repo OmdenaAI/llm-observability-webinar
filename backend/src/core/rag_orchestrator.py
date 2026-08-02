@@ -185,6 +185,8 @@ class RAGOrchestrator:
         use_contextual_retrieval: bool = False,
         model: str | None = None,
         top_k: int = 2,
+        pinned_source: str | None = None,
+        pinned_content_contains: str | None = None,
     ) -> RAGResponse:
         """Answer a single question end to end.
 
@@ -216,7 +218,22 @@ class RAGOrchestrator:
                 plain-vs-contextual comparison those moments exist to
                 demonstrate. Forcing top_k=1 makes retrieval pick a
                 single winner, which is what actually lets retrieval
-                mode determine the outcome.
+                mode determine the outcome. Ignored when pinned_source
+                is set.
+            pinned_source: If set, bypasses vector similarity entirely
+                and retrieves a specific known chunk by source filename
+                (see VectorStoreInterface.retrieve_by_marker). Used only
+                by QualityTrapScenario (Moment 2) — the trap doc reliably
+                winning an organic embedding race against the retention
+                doc turned out not to be something wording/chunking
+                changes could guarantee, and unlike Moment 3, Moment 2
+                isn't trying to demonstrate retrieval's own ranking
+                behavior — it's demonstrating what happens once a
+                specific, known chunk is handed to generation and
+                judging, which still both run for real.
+            pinned_content_contains: Required if pinned_source is set —
+                the substring identifying which chunk of that document
+                to pin to.
 
         Returns:
             The full response, including retrieval, generation, any
@@ -234,6 +251,8 @@ class RAGOrchestrator:
                 question,
                 use_contextual_retrieval,
                 top_k,
+                pinned_source,
+                pinned_content_contains,
             )
 
             generation = await self._generate(
@@ -314,6 +333,8 @@ class RAGOrchestrator:
         question: str,
         use_contextual_retrieval: bool,
         top_k: int = 2,
+        pinned_source: str | None = None,
+        pinned_content_contains: str | None = None,
     ) -> RetrievalResult:
         """Retrieve context chunks for the given question.
 
@@ -323,21 +344,43 @@ class RAGOrchestrator:
                 retrieval strategy.
             top_k: How many chunks to retrieve. See handle_question's
                 top_k docstring for why this is overridden for Moments
-                2 and 3.
+                2 and 3. Ignored when pinned_source is set.
+            pinned_source: If set, retrieves a specific known chunk by
+                marker instead of running a similarity search. See
+                handle_question's docstring.
+            pinned_content_contains: The marker substring identifying
+                which chunk of pinned_source to pin to. Required if
+                pinned_source is set.
 
         Returns:
             The retrieved chunks, wrapped with query and mode metadata.
         """
-        query = Query(
-            text=question,
-            use_contextual_retrieval=use_contextual_retrieval,
-        )
         async with self._tracer.start_span(
             name="retrieve",
             kind=SpanKind.RETRIEVAL,
-            attributes={"contextual": use_contextual_retrieval},
+            attributes={
+                "contextual": use_contextual_retrieval,
+                "pinned": pinned_source is not None,
+            },
         ):
-            result = await self._vector_store.retrieve(query, top_k)
+            if pinned_source is not None:
+                if pinned_content_contains is None:
+                    raise ValueError(
+                        "pinned_content_contains is required when "
+                        "pinned_source is set"
+                    )
+                result = await self._vector_store.retrieve_by_marker(
+                    pinned_source,
+                    pinned_content_contains,
+                    use_contextual_retrieval,
+                )
+            else:
+                query = Query(
+                    text=question,
+                    use_contextual_retrieval=use_contextual_retrieval,
+                )
+                result = await self._vector_store.retrieve(query, top_k)
+
             # TEMPORARY diagnostic logging — remove once Moment 2/3
             # retrieval behavior is confirmed stable. logger.debug was
             # already here for judge scores but isn't visible at the

@@ -52,6 +52,32 @@ class RetrievalService(VectorStoreInterface):
                 last_error = exc
         raise last_error  # type: ignore[misc]
 
+    async def retrieve_by_marker(
+        self,
+        source: str,
+        content_contains: str,
+        contextual: bool = False,
+    ) -> RetrievalResult:
+        """Retrieve a pinned chunk, retrying on failure up to max_retries times.
+
+        Args:
+            source: The exact source filename to look within.
+            content_contains: A substring identifying the specific chunk.
+            contextual: Whether to look in the contextual collection.
+
+        Raises:
+            Exception: The last error encountered, if all attempts fail.
+        """
+        last_error: Exception | None = None
+        for attempt in range(self._max_retries + 1):
+            try:
+                return await self._vector_store.retrieve_by_marker(
+                    source, content_contains, contextual
+                )
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+        raise last_error  # type: ignore[misc]
+
     async def upsert_documents(
         self,
         documents: list[dict],

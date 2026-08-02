@@ -42,6 +42,44 @@ class VectorStoreInterface(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def retrieve_by_marker(
+        self,
+        source: str,
+        content_contains: str,
+        contextual: bool = False,
+    ) -> RetrievalResult:
+        """Return the single chunk from a known source document matching
+        a known marker substring, bypassing vector similarity entirely.
+
+        Used only by scripted demo sub-cases (currently Moment 2's
+        quality-trap question) where the whole point is to reliably
+        exercise a known chunk's downstream behavior (generation +
+        judging) — not to test whether retrieval organically finds it.
+        Everything downstream of retrieval (generation, judging) still
+        runs for real; only which chunk gets selected is pinned. Never
+        used for Moment 3's plain-vs-contextual comparison, where
+        retrieval's own ranking behavior is the thing being
+        demonstrated.
+
+        Args:
+            source: The exact `source` filename to look within (e.g.
+                "backup_disaster_recovery_policy.md").
+            content_contains: A substring that appears in exactly one
+                chunk of that document — used to pick the specific
+                chunk when a document has been split into several.
+            contextual: Whether to look in the contextual collection
+                instead of the plain one.
+
+        Returns:
+            A RetrievalResult containing the single matching chunk (or
+            zero chunks, with retrieval_mode="pinned", if no match is
+            found — callers should treat an empty result as a
+            misconfigured marker/source pair to fix, not a normal
+            empty-retrieval case).
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     async def upsert_documents(
         self,
         documents: list[dict],

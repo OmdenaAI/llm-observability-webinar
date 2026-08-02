@@ -37,6 +37,28 @@ class BaseVectorStore(VectorStoreInterface):
         logger.debug(f"Retrieving top_k={top_k} for query: {query.text!r}")
         return await self._do_retrieve(query, top_k)
 
+    async def retrieve_by_marker(
+        self,
+        source: str,
+        content_contains: str,
+        contextual: bool = False,
+    ) -> RetrievalResult:
+        """Log and delegate to the concrete store's pinned-chunk lookup.
+
+        Args:
+            source: The exact source filename to look within.
+            content_contains: A substring identifying the specific chunk.
+            contextual: Whether to look in the contextual collection.
+
+        Returns:
+            The single matching chunk, wrapped as a RetrievalResult.
+        """
+        logger.debug(
+            f"Pinned retrieval: source={source!r}, "
+            f"content_contains={content_contains!r}, contextual={contextual}"
+        )
+        return await self._do_retrieve_by_marker(source, content_contains, contextual)
+
     async def upsert_documents(
         self,
         documents: list[dict],
@@ -63,6 +85,22 @@ class BaseVectorStore(VectorStoreInterface):
         Args:
             query: The user's question and retrieval-mode preference.
             top_k: The maximum number of chunks to return.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    async def _do_retrieve_by_marker(
+        self,
+        source: str,
+        content_contains: str,
+        contextual: bool,
+    ) -> RetrievalResult:
+        """Perform the actual pinned-chunk lookup against the concrete backend.
+
+        Args:
+            source: The exact source filename to look within.
+            content_contains: A substring identifying the specific chunk.
+            contextual: Whether to look in the contextual collection.
         """
         raise NotImplementedError
 
