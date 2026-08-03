@@ -116,7 +116,16 @@ class LiteLLMGatewayProvider(BaseLLMProvider):
         self._seed = seed
         self._http_client = httpx.AsyncClient(
             base_url=gateway_url,
-            timeout=30.0,
+            # 90s, not the original 30s: confirmed via a live run that a
+            # cold Ollama model load (first inference after container
+            # start) plus contention from the rest of the stack running
+            # on one machine can exceed 30s, surfacing as an
+            # httpx.ReadTimeout mid-demo rather than a clean failover.
+            # See also the Ollama warm-up step added to `make run`,
+            # which addresses the cold-load case directly — this timeout
+            # bump is the backstop for everything else (general
+            # resource contention, a slower host machine, etc.).
+            timeout=90.0,
             headers={"Authorization": f"Bearer {admin_api_key}"} if admin_api_key else {},
         )
 

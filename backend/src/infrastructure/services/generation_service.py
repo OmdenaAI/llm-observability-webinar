@@ -5,6 +5,8 @@ this is the extension point for retry/backoff behavior around
 generation specifically (e.g. retrying once on a gateway timeout before
 surfacing an error), independent of the gateway's own failover logic.
 """
+import asyncio
+
 from src.domain.entities.generation import GenerationResult
 from src.domain.entities.query import RetrievedChunk
 from src.domain.interfaces.llm_provider import LLMProviderInterface
@@ -17,6 +19,7 @@ class GenerationService(LLMProviderInterface):
         self,
         llm_provider: LLMProviderInterface,
         max_retries: int = 1,
+        retry_backoff_seconds: float = 2.0,
     ) -> None:
         """Initialize the service.
 
@@ -24,9 +27,16 @@ class GenerationService(LLMProviderInterface):
             llm_provider: The underlying LLM provider to delegate to.
             max_retries: How many additional attempts to make on
                 generation failure before giving up.
+            retry_backoff_seconds: How long to wait before a retry
+                attempt. Added after a live run showed the original
+                immediate retry just re-hitting the same timeout a
+                second time (e.g. Ollama still mid cold-load) — a short
+                pause gives transient contention an actual chance to
+                clear before trying again.
         """
         self._llm_provider = llm_provider
         self._max_retries = max_retries
+        self._retry_backoff_seconds = retry_backoff_seconds
 
     async def generate(
         self,
@@ -46,6 +56,8 @@ class GenerationService(LLMProviderInterface):
         """
         last_error: Exception | None = None
         for attempt in range(self._max_retries + 1):
+            if attempt > 0:
+                await asyncio.sleep(self._retry_backoff_seconds)
             try:
                 return await self._llm_provider.generate(question, context, model)
             except Exception as exc:  # noqa: BLE001

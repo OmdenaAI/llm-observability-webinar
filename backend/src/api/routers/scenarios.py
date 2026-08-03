@@ -272,15 +272,25 @@ async def run_reliability_scenario(
 )
 @inject
 async def run_traceability_scenario(
+    question: str = SPRINT_STATUS_QUESTION,
     scenario: TraceabilityScenario = Depends(Provide[Container.traceability_scenario]),
 ) -> TraceabilityScenarioResponse:
-    """Run Moment 5 — the fixed sprint-status question.
+    """Run Moment 5 — normally the fixed sprint-status question, editable
+    from the UI.
 
     Chains four read-only MCP calls to Umaku: sprints_get_active,
     kanban_get_board, projects_get_dashboard, and
-    performance_assessments_by_project.
+    performance_assessments_by_project — but only if the question
+    matches ToolRouter's keyword heuristic (any of "sprint", "team",
+    "kanban", "board", "performance"). Editing the question to remove
+    all of those means no MCP calls will be made at all — this is a
+    simple, deliberately rule-based router (see tool_router.py's module
+    docstring), not an LLM deciding tool use.
 
     Args:
+        question: The question to ask. Defaults to the fixed
+            sprint-status question used live in the demo, but callers
+            (the UI's editable question box) may override it.
         scenario: Injected traceability scenario use case.
 
     Returns:
@@ -291,7 +301,7 @@ async def run_traceability_scenario(
         HTTPException: 500 if the scenario fails unexpectedly.
     """
     try:
-        result = await scenario.run(SPRINT_STATUS_QUESTION)
+        result = await scenario.run(question)
         return TraceabilityScenarioResponse(
             answer=result.response.answer,
             tool_call_count=result.tool_call_count,

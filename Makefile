@@ -14,6 +14,7 @@ build: ## Build all Docker images (backend, frontend, supporting services)
 
 run: ## Run all containers via Docker Compose (assumes already built)
 	docker compose up -d
+	@./scripts/warmup_ollama.sh || true
 
 start: build seed run ## Full path: build -> seed data -> run — everything in Docker
 	@echo "Stack is up. Frontend: http://localhost:5173  Backend: http://localhost:8000"
