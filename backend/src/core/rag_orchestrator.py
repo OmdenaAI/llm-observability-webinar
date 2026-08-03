@@ -317,13 +317,29 @@ class RAGOrchestrator:
             async with self._tracer.start_span(
                 name=f"mcp:{tool_name}",
                 kind=SpanKind.TOOL_CALL,
-                attributes={"tool_name": tool_name},
-            ):
+                attributes={
+                    "tool_name": tool_name,
+                    "input.value": json.dumps(call_arguments),
+                },
+            ) as span:
                 result = await self._mcp_client.call_tool(
                     tool_name,
                     call_arguments,
                 )
                 results.append(result)
+
+                # Attached AFTER the call, same reasoning as the generate
+                # span below — the actual result (or error) is only known
+                # once the call completes. This is what makes Moment 5's
+                # payoff — seeing the real Umaku response per call, not
+                # just "a tool call happened" — visible in Langfuse/Phoenix
+                # rather than only in this app's own UI.
+                span.set_attribute(
+                    "output.value",
+                    json.dumps(result.result)
+                    if result.result is not None
+                    else (result.error_message or "(no result)"),
+                )
 
             if tool_name == "sprints_get_active" and result.status == ToolCallStatus.SUCCESS:
                 active_sprint_id = _extract_active_sprint_id(result.result)
@@ -363,8 +379,9 @@ class RAGOrchestrator:
             attributes={
                 "contextual": use_contextual_retrieval,
                 "pinned": pinned_source is not None,
+                "input.value": question,
             },
-        ):
+        ) as span:
             if pinned_source is not None:
                 result = await self._vector_store.retrieve_by_marker(
                     pinned_source,
@@ -377,6 +394,26 @@ class RAGOrchestrator:
                     use_contextual_retrieval=use_contextual_retrieval,
                 )
                 result = await self._vector_store.retrieve(query, top_k)
+
+            # Attached AFTER the call, same reasoning as the generate
+            # span below — which chunk(s) actually came back is only
+            # known once retrieval completes. This is what makes it
+            # possible to see, in Langfuse/Phoenix, exactly which
+            # document(s) and content answered a question — not just
+            # that "a retrieval happened."
+            span.set_attribute(
+                "output.value",
+                json.dumps(
+                    [
+                        {
+                            "source": c.source,
+                            "score": c.score,
+                            "content": c.content,
+                        }
+                        for c in result.chunks
+                    ]
+                ),
+            )
 
             # TEMPORARY diagnostic logging — remove once Moment 2/3
             # retrieval behavior is confirmed stable. logger.debug was
@@ -430,6 +467,7 @@ class RAGOrchestrator:
             attributes={
                 "context_chunks": len(retrieval.chunks),
                 "tool_result_chunks": len(tool_context_chunks),
+                "input.value": question,
             },
         ) as span:
             generation = await self._llm_provider.generate(
@@ -439,13 +477,16 @@ class RAGOrchestrator:
             )
 
             # Attached AFTER the call, since these values (actual model
-            # used, cost, cache hit, whether a fallback fired) are only
-            # known once generation completes — not at span-start time.
-            # This is what makes cost, model routing, and the Moment 4
-            # failover actually visible in Langfuse/Phoenix, rather than
+            # used, cost, cache hit, whether a fallback fired, and the
+            # answer itself) are only known once generation completes —
+            # not at span-start time. This is what makes cost, model
+            # routing, the Moment 4 failover, AND the actual generated
+            # answer text all visible in Langfuse/Phoenix, rather than
             # only in this app's own UI: without these attributes, a
             # trace shows that a "generate" step happened, but nothing
-            # about which model answered or whether it was a fallback.
+            # about which model answered, whether it was a fallback, or
+            # what it actually said.
+            span.set_attribute("output.value", generation.answer)
             span.set_attribute(
                 "gen_ai.request.model",
                 generation.metadata.get("requested_model") or model or "unknown",
