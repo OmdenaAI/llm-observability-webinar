@@ -42,6 +42,17 @@ context. A 0.0 means the answer is entirely unsupported or contradicts \
 the context. If the answer states something the context does not \
 contain, that portion is unfaithful even if it sounds plausible.
 
+Pay close attention to attribution, not just facts: if the context \
+describes something about one specific subject or scope (e.g. backup \
+snapshots, a specific plan tier, a specific time window) and the answer \
+restates that fact as if it applies to a broader or different subject \
+(e.g. generalizing "backup snapshot retention" into "your data" or \
+"your account data"), the broadened claim is UNFAITHFUL — even though \
+the underlying number or fact does appear verbatim in the context. The \
+context's stated subject and the answer's stated subject must match; a \
+correct number attached to the wrong subject is still a wrong answer, \
+and is often more misleading than an answer that's simply irrelevant.
+
 - "relevancy": how directly the answer addresses the question asked, \
 regardless of whether it is grounded in the context. A 1.0 means the \
 answer is squarely on-topic. A 0.0 means the answer does not address \
