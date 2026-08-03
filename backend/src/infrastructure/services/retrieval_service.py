@@ -55,14 +55,15 @@ class RetrievalService(VectorStoreInterface):
     async def retrieve_by_marker(
         self,
         source: str,
-        content_contains: str,
+        content_contains: str | None = None,
         contextual: bool = False,
     ) -> RetrievalResult:
-        """Retrieve a pinned chunk, retrying on failure up to max_retries times.
+        """Retrieve pinned chunk(s), retrying on failure up to max_retries times.
 
         Args:
             source: The exact source filename to look within.
-            content_contains: A substring identifying the specific chunk.
+            content_contains: A substring identifying one specific
+                chunk, or None to return every chunk from that source.
             contextual: Whether to look in the contextual collection.
 
         Raises:

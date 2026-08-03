@@ -202,10 +202,35 @@ class ContextScenario:
         """
         await self._gateway.set_cache_enabled(False)
 
+        # Pinned rather than organic retrieval, same reasoning as
+        # Moment 2's trap: current_doc_example.md reliably wins an
+        # organic embedding race against stale_doc_example.md regardless
+        # of retrieval mode, which meant this sub-case could never
+        # actually surface the stale doc to demonstrate "passes eval,
+        # still wrong." Pinned to the whole document (not one chunk)
+        # because the two-part question needs both of the stale doc's
+        # facts (support response time, refund window) together, and
+        # they live in separate chunks post-chunking.
+        #
+        # Deliberately pinned from the PLAIN collection
+        # (use_contextual_retrieval=False here), not contextual: the
+        # contextualizer annotates each chunk with whether its source
+        # document looks current or superseded, so pinning the
+        # contextual collection's version would hand the model a chunk
+        # that likely already says "this is the outdated 2023 policy" —
+        # which would let the model correctly self-correct, defeating
+        # the exact "faithful but wrong, no warning" pattern this
+        # sub-case exists to demonstrate. This isn't testing retrieval's
+        # own behavior — it's testing what generation and judging do
+        # once a known stale document is in context, which is the actual
+        # point of this sub-case. Both still run for real; only which
+        # document is in context is pinned. The plain-vs-contextual
+        # comparison above stays fully organic — that one's whole point
+        # is proving retrieval mode changes the outcome.
         response = await self._orchestrator.handle_question(
             stale_question,
-            use_contextual_retrieval=True,
-            top_k=1,
+            use_contextual_retrieval=False,
+            pinned_source="stale_doc_example.md",
         )
         eval_score = await self._evaluator.score(
             question=stale_question,

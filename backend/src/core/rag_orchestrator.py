@@ -231,9 +231,11 @@ class RAGOrchestrator:
                 behavior — it's demonstrating what happens once a
                 specific, known chunk is handed to generation and
                 judging, which still both run for real.
-            pinned_content_contains: Required if pinned_source is set —
-                the substring identifying which chunk of that document
-                to pin to.
+            pinned_content_contains: A substring identifying which chunk
+                of pinned_source to pin to, or None to pin every chunk
+                of that document (used when a question needs multiple
+                facts from the same document together — e.g. Moment 3's
+                two-part stale-context question).
 
         Returns:
             The full response, including retrieval, generation, any
@@ -364,11 +366,6 @@ class RAGOrchestrator:
             },
         ):
             if pinned_source is not None:
-                if pinned_content_contains is None:
-                    raise ValueError(
-                        "pinned_content_contains is required when "
-                        "pinned_source is set"
-                    )
                 result = await self._vector_store.retrieve_by_marker(
                     pinned_source,
                     pinned_content_contains,

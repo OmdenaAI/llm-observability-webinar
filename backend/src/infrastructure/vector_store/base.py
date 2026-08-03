@@ -40,18 +40,19 @@ class BaseVectorStore(VectorStoreInterface):
     async def retrieve_by_marker(
         self,
         source: str,
-        content_contains: str,
+        content_contains: str | None = None,
         contextual: bool = False,
     ) -> RetrievalResult:
         """Log and delegate to the concrete store's pinned-chunk lookup.
 
         Args:
             source: The exact source filename to look within.
-            content_contains: A substring identifying the specific chunk.
+            content_contains: A substring identifying one specific
+                chunk, or None to return every chunk from that source.
             contextual: Whether to look in the contextual collection.
 
         Returns:
-            The single matching chunk, wrapped as a RetrievalResult.
+            The matching chunk(s), wrapped as a RetrievalResult.
         """
         logger.debug(
             f"Pinned retrieval: source={source!r}, "
@@ -92,14 +93,15 @@ class BaseVectorStore(VectorStoreInterface):
     async def _do_retrieve_by_marker(
         self,
         source: str,
-        content_contains: str,
+        content_contains: str | None,
         contextual: bool,
     ) -> RetrievalResult:
         """Perform the actual pinned-chunk lookup against the concrete backend.
 
         Args:
             source: The exact source filename to look within.
-            content_contains: A substring identifying the specific chunk.
+            content_contains: A substring identifying one specific
+                chunk, or None to return every chunk from that source.
             contextual: Whether to look in the contextual collection.
         """
         raise NotImplementedError
