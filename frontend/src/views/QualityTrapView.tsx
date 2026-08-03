@@ -5,7 +5,7 @@ import { MetricGrid } from "../components/ui/MetricGrid";
 import type { QualityTrapResponse } from "../types";
 
 const DEFAULT_QUESTION =
-  "If I delete my account, is a snapshot of my data kept anywhere, and for how long?";
+  "Exactly how many days is my data retained after I delete my account?";
 
 /**
  * Moment 2 — Quality Trap: High Relevancy, Low Faithfulness.
