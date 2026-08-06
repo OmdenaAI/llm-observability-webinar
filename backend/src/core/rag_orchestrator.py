@@ -17,6 +17,9 @@ from src.domain.interfaces.llm_provider import LLMProviderInterface
 from src.domain.interfaces.mcp_client import MCPClientInterface
 from src.domain.interfaces.tracer import TracerInterface
 from src.domain.interfaces.vector_store import VectorStoreInterface
+from utils.logger import get_logger
+
+logger = get_logger()
 
 # Umaku's exact field name for a sprint's ID within a sprint object,
 # and its type, are now confirmed via a live call: the first result's
@@ -181,6 +184,9 @@ class RAGOrchestrator:
         question: str,
         use_contextual_retrieval: bool = False,
         model: str | None = None,
+        top_k: int = 2,
+        pinned_source: str | None = None,
+        pinned_content_contains: str | None = None,
     ) -> RAGResponse:
         """Answer a single question end to end.
 
@@ -202,6 +208,34 @@ class RAGOrchestrator:
                 request would follow whatever cache/routing state was
                 left over from testing other moments, which could mean
                 it never actually hits the dead provider at all.
+            top_k: How many chunks to retrieve. Defaults to 2. Moments 2
+                and 3 (QualityTrapScenario, ContextScenario) override
+                this to 1 — with a small corpus containing near-duplicate
+                documents (the current/stale pricing pair, and the
+                split retention/backup pair), top_k=2 tends to retrieve
+                both members of a pair together regardless of retrieval
+                mode, which quietly defeats both the trap and the
+                plain-vs-contextual comparison those moments exist to
+                demonstrate. Forcing top_k=1 makes retrieval pick a
+                single winner, which is what actually lets retrieval
+                mode determine the outcome. Ignored when pinned_source
+                is set.
+            pinned_source: If set, bypasses vector similarity entirely
+                and retrieves a specific known chunk by source filename
+                (see VectorStoreInterface.retrieve_by_marker). Used only
+                by QualityTrapScenario (Moment 2) — the trap doc reliably
+                winning an organic embedding race against the retention
+                doc turned out not to be something wording/chunking
+                changes could guarantee, and unlike Moment 3, Moment 2
+                isn't trying to demonstrate retrieval's own ranking
+                behavior — it's demonstrating what happens once a
+                specific, known chunk is handed to generation and
+                judging, which still both run for real.
+            pinned_content_contains: A substring identifying which chunk
+                of pinned_source to pin to, or None to pin every chunk
+                of that document (used when a question needs multiple
+                facts from the same document together — e.g. Moment 3's
+                two-part stale-context question).
 
         Returns:
             The full response, including retrieval, generation, any
@@ -218,6 +252,9 @@ class RAGOrchestrator:
             retrieval = await self._retrieve(
                 question,
                 use_contextual_retrieval,
+                top_k,
+                pinned_source,
+                pinned_content_contains,
             )
 
             generation = await self._generate(
@@ -280,13 +317,29 @@ class RAGOrchestrator:
             async with self._tracer.start_span(
                 name=f"mcp:{tool_name}",
                 kind=SpanKind.TOOL_CALL,
-                attributes={"tool_name": tool_name},
-            ):
+                attributes={
+                    "tool_name": tool_name,
+                    "input.value": json.dumps(call_arguments),
+                },
+            ) as span:
                 result = await self._mcp_client.call_tool(
                     tool_name,
                     call_arguments,
                 )
                 results.append(result)
+
+                # Attached AFTER the call, same reasoning as the generate
+                # span below — the actual result (or error) is only known
+                # once the call completes. This is what makes Moment 5's
+                # payoff — seeing the real Umaku response per call, not
+                # just "a tool call happened" — visible in Langfuse/Phoenix
+                # rather than only in this app's own UI.
+                span.set_attribute(
+                    "output.value",
+                    json.dumps(result.result)
+                    if result.result is not None
+                    else (result.error_message or "(no result)"),
+                )
 
             if tool_name == "sprints_get_active" and result.status == ToolCallStatus.SUCCESS:
                 active_sprint_id = _extract_active_sprint_id(result.result)
@@ -297,6 +350,9 @@ class RAGOrchestrator:
         self,
         question: str,
         use_contextual_retrieval: bool,
+        top_k: int = 2,
+        pinned_source: str | None = None,
+        pinned_content_contains: str | None = None,
     ) -> RetrievalResult:
         """Retrieve context chunks for the given question.
 
@@ -304,20 +360,74 @@ class RAGOrchestrator:
             question: The user's natural-language question.
             use_contextual_retrieval: Whether to use the contextual
                 retrieval strategy.
+            top_k: How many chunks to retrieve. See handle_question's
+                top_k docstring for why this is overridden for Moments
+                2 and 3. Ignored when pinned_source is set.
+            pinned_source: If set, retrieves a specific known chunk by
+                marker instead of running a similarity search. See
+                handle_question's docstring.
+            pinned_content_contains: The marker substring identifying
+                which chunk of pinned_source to pin to. Required if
+                pinned_source is set.
 
         Returns:
             The retrieved chunks, wrapped with query and mode metadata.
         """
-        query = Query(
-            text=question,
-            use_contextual_retrieval=use_contextual_retrieval,
-        )
         async with self._tracer.start_span(
             name="retrieve",
             kind=SpanKind.RETRIEVAL,
-            attributes={"contextual": use_contextual_retrieval},
-        ):
-            return await self._vector_store.retrieve(query)
+            attributes={
+                "contextual": use_contextual_retrieval,
+                "pinned": pinned_source is not None,
+                "input.value": question,
+            },
+        ) as span:
+            if pinned_source is not None:
+                result = await self._vector_store.retrieve_by_marker(
+                    pinned_source,
+                    pinned_content_contains,
+                    use_contextual_retrieval,
+                )
+            else:
+                query = Query(
+                    text=question,
+                    use_contextual_retrieval=use_contextual_retrieval,
+                )
+                result = await self._vector_store.retrieve(query, top_k)
+
+            # Attached AFTER the call, same reasoning as the generate
+            # span below — which chunk(s) actually came back is only
+            # known once retrieval completes. This is what makes it
+            # possible to see, in Langfuse/Phoenix, exactly which
+            # document(s) and content answered a question — not just
+            # that "a retrieval happened."
+            span.set_attribute(
+                "output.value",
+                json.dumps(
+                    [
+                        {
+                            "source": c.source,
+                            "score": c.score,
+                            "content": c.content,
+                        }
+                        for c in result.chunks
+                    ]
+                ),
+            )
+
+            # TEMPORARY diagnostic logging — remove once Moment 2/3
+            # retrieval behavior is confirmed stable. logger.debug was
+            # already here for judge scores but isn't visible at the
+            # backend's current INFO log level; this uses INFO so it
+            # shows up without changing config.
+            logger.info(
+                f"Retrieved {len(result.chunks)} chunk(s) for "
+                f"top_k={top_k}, mode={result.retrieval_mode!r}: "
+                + ", ".join(
+                    f"[{c.source} score={c.score:.4f}]" for c in result.chunks
+                )
+            )
+            return result
 
     async def _generate(
         self,
@@ -357,6 +467,7 @@ class RAGOrchestrator:
             attributes={
                 "context_chunks": len(retrieval.chunks),
                 "tool_result_chunks": len(tool_context_chunks),
+                "input.value": question,
             },
         ) as span:
             generation = await self._llm_provider.generate(
@@ -366,13 +477,16 @@ class RAGOrchestrator:
             )
 
             # Attached AFTER the call, since these values (actual model
-            # used, cost, cache hit, whether a fallback fired) are only
-            # known once generation completes — not at span-start time.
-            # This is what makes cost, model routing, and the Moment 4
-            # failover actually visible in Langfuse/Phoenix, rather than
+            # used, cost, cache hit, whether a fallback fired, and the
+            # answer itself) are only known once generation completes —
+            # not at span-start time. This is what makes cost, model
+            # routing, the Moment 4 failover, AND the actual generated
+            # answer text all visible in Langfuse/Phoenix, rather than
             # only in this app's own UI: without these attributes, a
             # trace shows that a "generate" step happened, but nothing
-            # about which model answered or whether it was a fallback.
+            # about which model answered, whether it was a fallback, or
+            # what it actually said.
+            span.set_attribute("output.value", generation.answer)
             span.set_attribute(
                 "gen_ai.request.model",
                 generation.metadata.get("requested_model") or model or "unknown",

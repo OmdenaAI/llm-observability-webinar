@@ -105,6 +105,14 @@ class Container(containers.DeclarativeContainer):
             lambda cfg: cfg.ollama_default_model,
             config,
         ),
+        temperature=providers.Callable(
+            lambda cfg: cfg.generation_temperature,
+            config,
+        ),
+        seed=providers.Callable(
+            lambda cfg: cfg.generation_seed,
+            config,
+        ),
     )
     litellm_provider = providers.Singleton(
         LiteLLMGatewayProvider,
@@ -119,6 +127,14 @@ class Container(containers.DeclarativeContainer):
         gateway=gateway,
         admin_api_key=providers.Callable(
             lambda cfg: cfg.litellm_admin_api_key,
+            config,
+        ),
+        temperature=providers.Callable(
+            lambda cfg: cfg.generation_temperature,
+            config,
+        ),
+        seed=providers.Callable(
+            lambda cfg: cfg.generation_seed,
             config,
         ),
     )

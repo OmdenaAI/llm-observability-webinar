@@ -40,6 +40,16 @@ litellm_settings:
   cache_params:
     type: local
 
+  # Requests always target "primary-model" by name during Moment 4 —
+  # LiteLLM decides server-side whether OpenAI or Anthropic actually
+  # serves the request via the fallbacks chain below, so the client
+  # can't know in advance which provider it'll land on. `seed` (sent by
+  # LiteLLMGatewayProvider for demo reproducibility) isn't supported by
+  # Anthropic's API at all; drop_params strips any param the serving
+  # provider doesn't accept, at whichever hop actually handles the
+  # request, rather than erroring or requiring the client to guess.
+  drop_params: true
+  
   # Fallback chain for Moment 4: local Ollama fails -> try OpenAI -> if
   # that also fails, try Anthropic. Order reflects "prefer the cheaper/
   # faster hosted option first, most resilient option last."

@@ -40,10 +40,6 @@ export function ReliabilityView() {
 
       <div className="panel">
         <p className="panel-title">Ask</p>
-        <p style={{ fontSize: "0.8rem", color: "var(--text-dim)", marginBottom: 12 }}>
-          Run <code style={{ fontFamily: "var(--font-mono)", color: "var(--accent)" }}>make kill-provider</code> in
-          a terminal first.
-        </p>
         <div className="field">
           <label htmlFor="reliability-question">Question</label>
           <input

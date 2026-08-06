@@ -2,7 +2,7 @@
 
 A RAG application, instrumented end-to-end, built to reliably reproduce six live demo moments for a webinar on LLM observability (cost, quality, context, reliability, traceability, and a unified dashboard).
 
-See `docs/architecture_plan.md` for the full architecture, `docs/demo_runbook.md` for the moment-by-moment live script, and `docs/preflight_checklist.md` before any dry run.
+See [`architectcural_plan.md`](architectcural_plan.md) for the full architecture, file tree, and open decisions.
 
 ## Running Locally
 
@@ -65,8 +65,7 @@ make test-e2e           # requires the full stack + a seeded Umaku workspace
 ### Before a live dry run
 1. `make seed` — re-run if the corpus or contextualization prompt changes
 2. Confirm the Umaku workspace is seeded per `scripts/seed_umaku.md`
-3. Walk `docs/preflight_checklist.md` in full
-4. `make kill-provider` / `make restore-provider` to rehearse Moment 4 specifically
+3. `make kill-provider` / `make restore-provider` to rehearse Moment 4 specifically
 
 ### Stopping / cleaning up
 ```bash

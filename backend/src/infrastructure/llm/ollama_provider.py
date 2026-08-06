@@ -25,15 +25,27 @@ class OllamaProvider(BaseLLMProvider):
         self,
         base_url: str,
         default_model: str = "llama3.2:1b",
+        temperature: float = 0.0,
+        seed: int | None = 42,
     ) -> None:
         """Initialize the provider's HTTP client.
 
         Args:
             base_url: The base URL of the Ollama instance.
             default_model: The model to use if none is specified per call.
+            temperature: Sampling temperature sent on every call — kept
+                low/zero by default for demo run-to-run reproducibility
+                (see Settings.generation_temperature), not a production
+                recommendation.
+            seed: Sampling seed sent on every call, alongside
+                temperature, for the same reproducibility reason. Ollama
+                supports this natively via `options.seed`. Pass None to
+                omit it.
         """
         self._base_url = base_url
         self._default_model = default_model
+        self._temperature = temperature
+        self._seed = seed
         self._http_client = httpx.AsyncClient(
             base_url=base_url,
             timeout=60.0,  # local model inference can be slow on CPU
@@ -54,12 +66,17 @@ class OllamaProvider(BaseLLMProvider):
         target_model = model or self._default_model
         start = time.perf_counter()
 
+        options: dict = {"temperature": self._temperature}
+        if self._seed is not None:
+            options["seed"] = self._seed
+
         response = await self._http_client.post(
             "/api/chat",
             json={
                 "model": target_model,
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
+                "options": options,
             },
         )
         response.raise_for_status()

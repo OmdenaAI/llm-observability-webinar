@@ -66,7 +66,23 @@ class QualityTrapScenario:
         # test run.
         await self._gateway.set_cache_enabled(False)
 
-        response = await self._orchestrator.handle_question(trap_question)
+        # Pinned rather than top_k=1 organic retrieval: four separate
+        # attempts (content wording, doc splitting, paragraph chunking,
+        # sentence chunking) to make the trap doc reliably win an
+        # organic embedding race against the retention doc either
+        # failed outright or only worked by accident (see backup_
+        # disaster_recovery_policy.md's git history for the one that
+        # "worked" by giving the chunk genuine correct grounding,
+        # defeating the trap a different way). This isn't testing
+        # retrieval's own behavior — it's testing what generation and
+        # judging do once a known chunk is in context, which is the
+        # actual point of Moment 2. Both still run for real; only chunk
+        # selection is pinned.
+        response = await self._orchestrator.handle_question(
+            trap_question,
+            pinned_source="backup_disaster_recovery_policy.md",
+            pinned_content_contains="retained for 90 days",
+        )
 
         eval_score = await self._evaluator.score(
             question=trap_question,

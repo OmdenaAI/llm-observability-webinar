@@ -4,15 +4,22 @@ import { Badge } from "../components/ui/Badge";
 import { TraceLink } from "../components/TraceLink";
 import type { TraceabilityScenarioResponse } from "../types";
 
+const DEFAULT_QUESTION = "How is the current sprint going, and how's the team doing?";
+
 /**
  * Moment 5 — Traceability: an MCP Tool Call, End to End.
  *
- * A single fixed question chains four read-only MCP calls to Umaku.
- * Each call's real status and latency is shown individually — not a
- * placeholder visualization — using the actual per-call data the
- * backend now returns.
+ * A fixed-by-default question chains four read-only MCP calls to
+ * Umaku. Each call's real status and latency is shown individually —
+ * not a placeholder visualization — using the actual per-call data the
+ * backend now returns. The question is editable, but tool routing here
+ * is a simple keyword match (any of "sprint", "team", "kanban",
+ * "board", "performance") rather than an LLM deciding tool use — see
+ * tool_router.py — so editing out all of those keywords means no MCP
+ * calls fire at all.
  */
 export function TraceabilityView() {
+  const [question, setQuestion] = useState(DEFAULT_QUESTION);
   const [result, setResult] = useState<TraceabilityScenarioResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +28,7 @@ export function TraceabilityView() {
     setLoading(true);
     setError(null);
     try {
-      setResult(await runTraceabilityScenario());
+      setResult(await runTraceabilityScenario(question));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -43,9 +50,19 @@ export function TraceabilityView() {
 
       <div className="panel">
         <p className="panel-title">Ask</p>
-        <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginBottom: 12 }}>
-          &ldquo;How is the current sprint going, and how&apos;s the team doing?&rdquo;
-        </p>
+        <div className="field">
+          <label htmlFor="traceability-question">Question</label>
+          <input
+            id="traceability-question"
+            type="text"
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+          />
+          <p style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: 4 }}>
+            Include at least one of: sprint, team, kanban, board, performance — otherwise
+            no MCP tool calls will be triggered.
+          </p>
+        </div>
         <div className="btn-row">
           <button className="btn btn-primary" onClick={handleRun} disabled={loading}>
             {loading ? "Asking…" : "Ask"}

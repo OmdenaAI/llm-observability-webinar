@@ -153,8 +153,11 @@ export async function runReliabilityScenario(
 }
 
 /** Moment 5 — Traceability. Fixed sprint-status question, no params needed. */
-export async function runTraceabilityScenario(): Promise<TraceabilityScenarioResponse> {
-  const res = await fetch(`${BASE_URL}/scenarios/traceability`, {
+export async function runTraceabilityScenario(
+  question: string,
+): Promise<TraceabilityScenarioResponse> {
+  const params = new URLSearchParams({ question });
+  const res = await fetch(`${BASE_URL}/scenarios/traceability?${params}`, {
     method: "POST",
   });
   if (!res.ok) throw new Error(`Traceability scenario failed: ${res.status}`);

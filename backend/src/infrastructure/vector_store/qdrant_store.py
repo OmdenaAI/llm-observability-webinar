@@ -167,6 +167,79 @@ class QdrantVectorStore(BaseVectorStore):
             retrieval_mode=retrieval_mode,
         )
 
+    async def _do_retrieve_by_marker(
+        self,
+        source: str,
+        content_contains: str | None,
+        contextual: bool,
+    ) -> RetrievalResult:
+        """Look up chunk(s) by source filename (+ optional content
+        substring), via a Qdrant payload filter — no embedding call, no
+        similarity ranking involved at all.
+
+        Used for scripted demo sub-cases that need guaranteed chunk(s)
+        rather than an organic similarity race (see
+        VectorStoreInterface.retrieve_by_marker's docstring for why).
+
+        Args:
+            source: The exact `source` filename to look within.
+            content_contains: A substring identifying one specific
+                chunk, or None to return every chunk from that source.
+            contextual: Whether to look in the contextual collection.
+
+        Returns:
+            A RetrievalResult with retrieval_mode="pinned", containing
+            the matching chunk(s) (or zero chunks if source/marker don't
+            match anything currently ingested).
+        """
+        target_collection = (
+            self._contextual_collection_name if contextual else self._collection_name
+        )
+
+        # scroll(), not query_points() — this is a payload filter, not a
+        # similarity search, so no query vector is needed at all.
+        points, _ = await self._client.scroll(
+            collection_name=target_collection,
+            scroll_filter=qdrant_models.Filter(
+                must=[
+                    qdrant_models.FieldCondition(
+                        key="source",
+                        match=qdrant_models.MatchValue(value=source),
+                    )
+                ]
+            ),
+            limit=100,  # corpus-sized; every chunk of one source document
+        )
+
+        matching_chunks = [
+            RetrievedChunk(
+                content=point.payload.get("content", ""),
+                source=point.payload.get("source", "unknown"),
+                score=1.0,  # not a similarity search — no meaningful score
+                metadata=point.payload.get("metadata", {}),
+            )
+            for point in points
+            if content_contains is None
+            or content_contains in point.payload.get("content", "")
+        ]
+
+        if not matching_chunks:
+            logger.warning(
+                f"Pinned retrieval found no chunk matching source={source!r}, "
+                f"content_contains={content_contains!r} in "
+                f"'{target_collection}' — check the marker still matches "
+                "current corpus content, or that `make seed` has been run."
+            )
+
+        return RetrievalResult(
+            query=Query(
+                text=content_contains or source,
+                use_contextual_retrieval=contextual,
+            ),
+            chunks=matching_chunks,
+            retrieval_mode="pinned",
+        )
+
     async def upsert_documents(
         self,
         documents: list[dict],
